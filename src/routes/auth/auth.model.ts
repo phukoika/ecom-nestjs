@@ -39,7 +39,12 @@ export const VerificationCodeSchema = z.object({
   id: z.number(),
   email: z.string(),
   code: z.string().length(6),
-  type: z.enum([TypeOfVerificationCode.REGISTER, TypeOfVerificationCode.FORGOT_PASSWORD]),
+  type: z.enum([
+    TypeOfVerificationCode.REGISTER,
+    TypeOfVerificationCode.FORGOT_PASSWORD,
+    TypeOfVerificationCode.LOGIN,
+    TypeOfVerificationCode.DISABLE_2FA,
+  ]),
   expiresAt: z.date(),
   createdAt: z.date(),
 })
@@ -63,7 +68,12 @@ export type SendOTPResType = z.infer<typeof SendOTPResSchema>
 export const LoginBodySchema = UserSchema.pick({
   email: true,
   password: true,
-}).strict()
+})
+  .extend({
+    totpCode: z.string().length(6).optional(), //2fa code
+    code: z.string().length(6).optional(), // email otp code
+  })
+  .strict()
 
 export type LoginBodyType = z.infer<typeof LoginBodySchema>
 
@@ -71,6 +81,10 @@ export const LoginResSchema = z.object({
   data: z.object({
     accessToken: z.string(),
     refreshToken: z.string(),
+    userInfo: z.object({
+      avatar: z.string().nullable(),
+      name: z.string().min(1).max(100),
+    })
   }),
   message: z.string(),
 })
@@ -85,9 +99,15 @@ export const RefreshTokenBodySchema = z
 
 export type RefreshTokenBodyType = z.infer<typeof RefreshTokenBodySchema>
 
-export const RefreshTokenResSchema = LoginResSchema
+export const RefreshTokenResSchema =z.object({
+  data: z.object({
+    accessToken: z.string(),
+    refreshToken: z.string(),
+  }),
+  message: z.string(),
+})
 
-export type RefreshTokenResType = LoginResType
+export type RefreshTokenResType = z.infer<typeof RefreshTokenResSchema>
 
 export const DeviceSchema = z.object({
   id: z.number(),
@@ -167,3 +187,34 @@ export const ForgotPasswordBodySchema = z
   })
 
 export type ForgotPasswordBodyType = z.infer<typeof ForgotPasswordBodySchema>
+
+export const Disable2FABodySchema = z
+  .object({
+    totpCode: z.string().length(6).optional(),
+    code: z.string().length(6).optional(),
+  })
+  .superRefine(({ totpCode, code }, ctx) => {
+    const message = 'Only one of totpCode and code is required'
+    if ((totpCode !== undefined) === (code !== undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        message,
+        path: ['otpCode'],
+      })
+
+      ctx.addIssue({
+        code: 'custom',
+        message,
+        path: ['code'],
+      })
+    }
+  })
+
+export type Disable2FABodyType = z.infer<typeof Disable2FABodySchema>
+
+export const TwoFASetupResSchema = z.object({
+  secret: z.string(),
+  url: z.string(),
+})
+
+export type TwoFASetupResType = z.infer<typeof TwoFASetupResSchema>

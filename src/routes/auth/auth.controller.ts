@@ -11,13 +11,16 @@ import {
   RegisterBodyDTO,
   RegisterResDTO,
   SendOTPBodyDTO,
+  TwoFASetupResDTO,
 } from 'src/routes/auth/auth.dto'
 import { LogoutResType, RefreshTokenResType, SendOTPResType } from 'src/routes/auth/auth.model'
 import { AuthService } from 'src/routes/auth/auth.service'
 import { GoogleService } from 'src/routes/auth/google.service'
 import envConfig from 'src/shared/config'
+import { ActiveUser } from 'src/shared/decorators/active-user.decorator'
 import { IsPublic } from 'src/shared/decorators/auth.decorator'
 import { UserAgent } from 'src/shared/decorators/user-agent.decorator'
+import { EmptyBodyDTO } from 'src/shared/dtos/request.dto'
 import { MessageResDTO } from 'src/shared/dtos/response.dto'
 
 @Controller('auth')
@@ -51,9 +54,13 @@ export class AuthController {
   @Post('login')
   @IsPublic()
   async login(@Body() body: LoginBodyDTO, @UserAgent() userAgent: string, @Ip() ip: string): Promise<LoginResDTO> {
-    const tokens = await this.authService.login({ ...body, userAgent, ip })
+    const result = await this.authService.login({ ...body, userAgent, ip })
     return {
-      data: tokens,
+      data: {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        userInfo: result.userInfo,
+      },
       message: 'Đăng nhập thành công',
     }
   }
@@ -75,7 +82,6 @@ export class AuthController {
 
   @Post('logout')
   async logout(@Body() body: LogoutBodyDTO): Promise<LogoutResType> {
-    console.log(body)
     const result = await this.authService.logout(body.refreshToken)
     return {
       message: result.message,
@@ -111,5 +117,12 @@ export class AuthController {
   @ZodSerializerDto(MessageResDTO)
   async forgotPassword(@Body() body: ForgotPasswordBodyDTO) {
     return this.authService.forgotPassword(body)
+  }
+
+  @Post('2fa/setup')
+  @IsPublic()
+  @ZodSerializerDto(TwoFASetupResDTO)
+  async setUpTwoFactorAuth(@Body() _: EmptyBodyDTO, @ActiveUser('userId') userId: number) {
+    return this.authService.setUpTwoFactorAuth(userId)
   }
 }

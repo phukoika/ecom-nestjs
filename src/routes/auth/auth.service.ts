@@ -19,6 +19,7 @@ import { EmailService } from 'src/shared/services/email.service'
 import { TokenService } from 'src/shared/services/token.service'
 import { AccessTokenPayloadCreate } from 'src/shared/types/jwt.type'
 import { RefreshToken } from '@prisma/client'
+import { TwoFactorAuthSerivce } from 'src/shared/services/2fa.service'
 @Injectable()
 export class AuthService {
   constructor(
@@ -28,6 +29,7 @@ export class AuthService {
     private readonly sharedUserRepository: SharedUserRepository,
     private readonly emailService: EmailService,
     private readonly tokenService: TokenService,
+    private readonly twoFactorAuthService: TwoFactorAuthSerivce,
   ) {}
   async register(body: RegisterBodyType) {
     try {
@@ -47,9 +49,11 @@ export class AuthService {
           roleId: clientRoleId,
         }),
         this.authRepository.deleteVerificationCode({
-          email: body.email,
-          code: body.code,
-          type: TypeOfVerificationCode.REGISTER,
+          email_code_type: {
+            email: body.email,
+            code: body.code,
+            type: TypeOfVerificationCode.REGISTER,
+          },
         }),
       ])
       return user
@@ -144,7 +148,14 @@ export class AuthService {
       roleId: user.roleId,
       roleName: user.role.name,
     })
-    return tokens
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      userInfo: {
+        avatar: user.avatar,
+        name: user.name,
+      }
+    }
   }
 
   async generateTokens({ userId, deviceId, roleId, roleName }: AccessTokenPayloadCreate) {
@@ -249,9 +260,11 @@ export class AuthService {
         },
       ),
       await this.authRepository.deleteVerificationCode({
-        email: body.email,
-        code: body.code,
-        type: TypeOfVerificationCode.FORGOT_PASSWORD,
+        email_code_type: {
+          email: body.email,
+          code: body.code,
+          type: TypeOfVerificationCode.FORGOT_PASSWORD,
+        },
       }),
     ])
     return {
@@ -269,9 +282,11 @@ export class AuthService {
     type: TypeOfVerificationCodeType
   }) {
     const verificationCode = await this.authRepository.findUniqueVerificationCode({
-      email,
-      code,
-      type,
+      email_code_type: {
+        email,
+        code,
+        type,
+      },
     })
     if (!verificationCode) {
       throw new UnprocessableEntityException([
@@ -289,5 +304,37 @@ export class AuthService {
       ])
     }
     return verificationCode
+  }
+
+  async setUpTwoFactorAuth(userId: number) {
+    const user = await this.sharedUserRepository.findUnique({
+      id: userId,
+    })
+    if (!user) {
+      throw new UnprocessableEntityException([
+        {
+          field: 'Email không tồn tại',
+          path: 'email',
+        },
+      ])
+    }
+    if (user.totpSecret) {
+      throw new UnprocessableEntityException([
+        {
+          field: 'Two factor authentication đã được bật',
+          path: 'totpSecret',
+        },
+      ])
+    }
+    const { secret, uri } = this.twoFactorAuthService.generateTOTPSecret(user.email)
+    await this.authRepository.updateUser({
+      id: userId,
+    }, {
+      totpSecret: secret
+    })
+    return {
+      uri,
+      secret,
+    }
   }
 }
